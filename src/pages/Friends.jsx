@@ -78,6 +78,15 @@ export default function Friends() {
     setMenuAnchorEl(null);
   };
 
+  const handleOpenUserProfile = (friend) => {
+    const profileId = friend?.id || friend?.userId;
+    if (!profileId) {
+      return;
+    }
+
+    navigate(`/profile/${profileId}`);
+  };
+
   const loadFriends = async () => {
     setLoading(true);
     setError(null);
@@ -326,8 +335,10 @@ export default function Friends() {
               {friends.map((friend) => (
                 <ListItem
                   key={friend.id || friend.userId || friend.username}
+                  onClick={() => handleOpenUserProfile(friend)}
                   sx={{
                     borderRadius: 1,
+                    cursor: "pointer",
                     "&:hover": {
                       bgcolor: "rgba(0, 0, 0, 0.04)",
                     },
@@ -350,7 +361,10 @@ export default function Friends() {
                       color="error"
                       size="small"
                       disabled={actionLoadingId === (friend.id || friend.userId)}
-                      onClick={() => handleUnfriend(friend)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleUnfriend(friend);
+                      }}
                     >
                       Unfriend
                     </Button>
@@ -361,7 +375,10 @@ export default function Friends() {
                         variant="contained"
                         size="small"
                         disabled={actionLoadingId === friend.username}
-                        onClick={() => handleAcceptRequest(friend)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleAcceptRequest(friend);
+                        }}
                       >
                         Accept
                       </Button>
@@ -372,7 +389,10 @@ export default function Friends() {
                         disabled={
                           actionLoadingId === `reject-${friend.id || friend.userId}`
                         }
-                        onClick={() => handleRejectRequest(friend)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleRejectRequest(friend);
+                        }}
                       >
                         Reject
                       </Button>

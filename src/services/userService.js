@@ -10,6 +10,14 @@ export const getMyInfo = async () => {
   });
 };
 
+export const getUserProfile = async (profileId) => {
+  return await httpClient.get(`${API.USER_PROFILE}/${profileId}`, {
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+};
+
 export const getIdentityMyInfo = async () => {
   return await httpClient.get(API.IDENTITY_MY_INFO, {
     headers: {

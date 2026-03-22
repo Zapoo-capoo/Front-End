@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Box,
   Card,
@@ -20,6 +20,7 @@ import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import dayjs from "dayjs";
 import {
   getMyInfo,
+  getUserProfile,
   updateProfile,
   uploadAvatar,
 } from "../services/userService";
@@ -28,6 +29,8 @@ import Scene from "./Scene";
 
 export default function Profile() {
   const navigate = useNavigate();
+  const { profileId } = useParams();
+  const isOtherProfile = Boolean(profileId);
   const [userDetails, setUserDetails] = useState({});
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -42,7 +45,9 @@ export default function Profile() {
 
   const getUserDetails = async () => {
     try {
-      const response = await getMyInfo();
+      const response = isOtherProfile
+        ? await getUserProfile(profileId)
+        : await getMyInfo();
       const data = response.data;
 
       setUserDetails(data.result);
@@ -56,6 +61,10 @@ export default function Profile() {
       if (error.response?.status === 401) {
         logOut();
         navigate("/login");
+      } else {
+        setSnackbarMessage("Failed to load profile.");
+        setSnackbarSeverity("error");
+        setSnackbarOpen(true);
       }
     }
   };
@@ -95,6 +104,10 @@ export default function Profile() {
   };
 
   const handleAvatarClick = () => {
+    if (isOtherProfile) {
+      return;
+    }
+
     fileInputRef.current.click();
   };
 
@@ -157,7 +170,7 @@ export default function Profile() {
     } else {
       getUserDetails();
     }
-  }, [navigate]);
+  }, [isOtherProfile, navigate, profileId]);
 
   return (
     <Scene>
@@ -205,7 +218,13 @@ export default function Profile() {
                 mb: "30px",
               }}
             >
-              <Tooltip title="Click to upload a profile picture">
+              <Tooltip
+                title={
+                  isOtherProfile
+                    ? "Profile picture"
+                    : "Click to upload a profile picture"
+                }
+              >
                 <Box sx={{ position: "relative" }}>
                   <Avatar
                     src={userDetails.avatar}
@@ -214,10 +233,10 @@ export default function Profile() {
                       height: 120,
                       fontSize: 48,
                       bgcolor: "#1976d2",
-                      cursor: "pointer",
+                      cursor: isOtherProfile ? "default" : "pointer",
                       transition: "opacity 0.3s",
                       "&:hover": {
-                        opacity: 0.8,
+                        opacity: isOtherProfile ? 1 : 0.8,
                       },
                     }}
                     onClick={handleAvatarClick}
@@ -225,29 +244,31 @@ export default function Profile() {
                     {userDetails.firstName?.[0]}
                     {userDetails.lastName?.[0]}
                   </Avatar>
-                  <Box
-                    sx={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      opacity: 0,
-                      transition: "opacity 0.3s",
-                      borderRadius: "50%",
-                      backgroundColor: "rgba(0, 0, 0, 0.4)",
-                      "&:hover": {
-                        opacity: 1,
-                      },
-                      cursor: "pointer",
-                    }}
-                    onClick={handleAvatarClick}
-                  >
-                    <PhotoCameraIcon sx={{ color: "white", fontSize: 36 }} />
-                  </Box>
+                  {!isOtherProfile && (
+                    <Box
+                      sx={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        opacity: 0,
+                        transition: "opacity 0.3s",
+                        borderRadius: "50%",
+                        backgroundColor: "rgba(0, 0, 0, 0.4)",
+                        "&:hover": {
+                          opacity: 1,
+                        },
+                        cursor: "pointer",
+                      }}
+                      onClick={handleAvatarClick}
+                    >
+                      <PhotoCameraIcon sx={{ color: "white", fontSize: 36 }} />
+                    </Box>
+                  )}
                   {uploading && (
                     <Box
                       sx={{
@@ -268,13 +289,15 @@ export default function Profile() {
                   )}
                 </Box>
               </Tooltip>
-              <input
-                type="file"
-                accept="image/*"
-                ref={fileInputRef}
-                style={{ display: "none" }}
-                onChange={handleFileSelect}
-              />
+              {!isOtherProfile && (
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  style={{ display: "none" }}
+                  onChange={handleFileSelect}
+                />
+              )}
               <Typography
                 sx={{
                   fontSize: 22,
@@ -291,7 +314,9 @@ export default function Profile() {
                 mb: "20px",
               }}
             >
-              Welcome back to Devteria, {userDetails.username} !
+              {isOtherProfile
+                ? `Profile of ${userDetails.username || "user"}`
+                : `Welcome back to Devteria, ${userDetails.username} !`}
             </Typography>
             <Box
               sx={{
@@ -340,6 +365,7 @@ export default function Profile() {
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 sx={{ width: "60%" }}
+                disabled={isOtherProfile}
               />
             </Box>
             <Box
@@ -364,6 +390,7 @@ export default function Profile() {
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 sx={{ width: "60%" }}
+                disabled={isOtherProfile}
               />
             </Box>
             <Box
@@ -389,6 +416,7 @@ export default function Profile() {
                 onChange={(e) => setEmail(e.target.value)}
                 sx={{ width: "60%" }}
                 type="email"
+                disabled={isOtherProfile}
               />
             </Box>
             <Box
@@ -413,6 +441,7 @@ export default function Profile() {
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
                 sx={{ width: "60%" }}
+                disabled={isOtherProfile}
               />
             </Box>
             <Box
@@ -436,28 +465,35 @@ export default function Profile() {
                 <DatePicker
                   value={dob}
                   onChange={(newValue) => setDob(newValue)}
-                  slotProps={{ textField: { size: "small" } }}
+                  slotProps={{
+                    textField: {
+                      size: "small",
+                      disabled: isOtherProfile,
+                    },
+                  }}
                   sx={{ width: "60%" }}
                 />
               </LocalizationProvider>
             </Box>
-            <Box
-              sx={{
-                display: "flex",
-                justifyContent: "center",
-                width: "100%",
-                mt: 3,
-              }}
-            >
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={handleUpdate}
-                sx={{ px: 4 }}
+            {!isOtherProfile && (
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "center",
+                  width: "100%",
+                  mt: 3,
+                }}
               >
-                Update Profile
-              </Button>
-            </Box>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={handleUpdate}
+                  sx={{ px: 4 }}
+                >
+                  Update Profile
+                </Button>
+              </Box>
+            )}
           </Box>
         </Card>
       ) : (

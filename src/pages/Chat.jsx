@@ -32,6 +32,14 @@ import {
 import { io } from "socket.io-client";
 import { getToken } from "../services/localStorageService";
 
+const resolveLatestIncomingAvatar = (messages, fallbackAvatar = "") => {
+  const latestIncomingMessageWithAvatar = [...messages]
+    .reverse()
+    .find((msg) => !msg.me && msg?.sender?.avatar);
+
+  return latestIncomingMessageWithAvatar?.sender?.avatar || fallbackAvatar;
+};
+
 export default function Chat() {
   const theme = useTheme();
   const [message, setMessage] = useState("");
@@ -89,14 +97,20 @@ export default function Chat() {
       // If conversation exists, just select it
       setSelectedConversation(existingConversation);
     } else {
+      const normalizedConversation = {
+        ...newConversation,
+        conversationAvatar:
+          newConversation?.conversationAvatar || user?.avatar || "",
+      };
+
       // Add to conversations list
       setConversations((prevConversations) => [
-        newConversation,
+        normalizedConversation,
         ...prevConversations,
       ]);
 
       // Select this new conversation
-      setSelectedConversation(newConversation);
+      setSelectedConversation(normalizedConversation);
     }
   };
 
@@ -140,11 +154,35 @@ export default function Chat() {
               (a, b) => new Date(a.createdDate) - new Date(b.createdDate)
             );
 
+            const latestIncomingAvatar = resolveLatestIncomingAvatar(
+              sortedMessages
+            );
+
             // Update messages map with the fetched messages
             setMessagesMap((prev) => ({
               ...prev,
               [conversationId]: sortedMessages,
             }));
+
+            // Keep conversation avatar in sync with the latest incoming message avatar.
+            if (latestIncomingAvatar) {
+              setConversations((prevConversations) =>
+                prevConversations.map((conv) =>
+                  conv.id === conversationId
+                    ? { ...conv, conversationAvatar: latestIncomingAvatar }
+                    : conv
+                )
+              );
+
+              setSelectedConversation((prevSelectedConversation) =>
+                prevSelectedConversation?.id === conversationId
+                  ? {
+                      ...prevSelectedConversation,
+                      conversationAvatar: latestIncomingAvatar,
+                    }
+                  : prevSelectedConversation
+              );
+            }
           }
         }
 
@@ -169,6 +207,47 @@ export default function Chat() {
   const currentMessages = selectedConversation
     ? messagesMap[selectedConversation.id] || []
     : [];
+  const latestIncomingAvatarForConversation = selectedConversation
+    ? resolveLatestIncomingAvatar(
+        currentMessages,
+        selectedConversation.conversationAvatar
+      )
+    : "";
+
+  useEffect(() => {
+    if (!selectedConversation?.id || currentMessages.length === 0) {
+      return;
+    }
+
+    const latestIncomingAvatar = resolveLatestIncomingAvatar(
+      currentMessages,
+      selectedConversation.conversationAvatar
+    );
+
+    if (!latestIncomingAvatar) {
+      return;
+    }
+
+    if (latestIncomingAvatar !== selectedConversation.conversationAvatar) {
+      setSelectedConversation((prevSelectedConversation) =>
+        prevSelectedConversation
+          ? {
+              ...prevSelectedConversation,
+              conversationAvatar: latestIncomingAvatar,
+            }
+          : prevSelectedConversation
+      );
+    }
+
+    setConversations((prevConversations) =>
+      prevConversations.map((conv) =>
+        conv.id === selectedConversation.id
+          ? { ...conv, conversationAvatar: latestIncomingAvatar }
+          : conv
+      )
+    );
+  }, [currentMessages, selectedConversation]);
+
   // Automatically scroll to the bottom when messages change or after sending a message
   useEffect(() => {
     scrollToBottom();
@@ -286,22 +365,36 @@ export default function Chat() {
       });
 
       // Update the conversation list with the new last message
-      setConversations((prevConversations) => {        
-        const updatedConversations = prevConversations.map((conv) =>
-          conv.id === message.conversationId
-            ? {
-                ...conv,
-                lastMessage: message.message,
-                lastTimestamp: new Date(message.createdDate).toLocaleString(),
-                unread:
-                  selectedConversation?.id === message.conversationId
-                    ? 0
-                    : (conv.unread || 0) + 1,
-                modifiedDate: message.createdDate,
-              }
-            : conv
-        );
-        
+      setConversations((prevConversations) => {
+        const updatedConversations = prevConversations.map((conv) => {
+          if (conv.id !== message.conversationId) {
+            return conv;
+          }
+
+          const nextConversationAvatar =
+            !message.me && message?.sender?.avatar
+              ? message.sender.avatar
+              : conv.conversationAvatar;
+
+          const updatedConversation = {
+            ...conv,
+            lastMessage: message.message,
+            lastTimestamp: new Date(message.createdDate).toLocaleString(),
+            unread:
+              selectedConversation?.id === message.conversationId
+                ? 0
+                : (conv.unread || 0) + 1,
+            modifiedDate: message.createdDate,
+            conversationAvatar: nextConversationAvatar,
+          };
+
+          if (selectedConversation?.id === message.conversationId) {
+            setSelectedConversation(updatedConversation);
+          }
+
+          return updatedConversation;
+        });
+
         return updatedConversations;
       });
     },
@@ -585,7 +678,10 @@ export default function Chat() {
                       >
                         {!msg.me && (
                           <Avatar
-                            src={msg.sender?.avatar}
+                            src={
+                              latestIncomingAvatarForConversation ||
+                              msg.sender?.avatar
+                            }
                             sx={{
                               mr: 1,
                               alignSelf: "flex-end",

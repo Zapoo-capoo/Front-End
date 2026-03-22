@@ -15,6 +15,7 @@ export const API = {
   GOOGLE_AUTHENTICATE: "/identity/auth/outbound/authentication",
   IDENTITY_MY_INFO: "/identity/users/my-info",
   MY_INFO: "/profile/users/my-profile",
+  USER_PROFILE: "/profile/users",
   CREATE_PASSWORD: "/identity/users/create-password",
   MY_POST: "/post/my-posts",
   CREATE_POST: "/post/create",
