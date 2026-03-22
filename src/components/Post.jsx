@@ -2,7 +2,7 @@ import { Box, Avatar, Typography } from "@mui/material";
 import React, { forwardRef } from 'react';
 
 const Post = forwardRef((props, ref) => {
-  const { avatar, username, created, content } = props.post;
+  const { avatar, username, created, content, mediaUrl } = props.post;
   return (
     <Box
       ref={ref}
@@ -48,6 +48,23 @@ const Post = forwardRef((props, ref) => {
           >
             {content}
           </Typography>
+          {mediaUrl && (
+            <Box
+              component="img"
+              src={mediaUrl}
+              alt="Post media"
+              sx={{
+                mt: 1,
+                width: "100%",
+                maxWidth: 420,
+                maxHeight: 420,
+                objectFit: "cover",
+                borderRadius: 2,
+                border: "1px solid",
+                borderColor: "divider",
+              }}
+            />
+          )}
         </Box>
       </Box>
     </Box>

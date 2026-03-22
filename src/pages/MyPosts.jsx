@@ -1,79 +1,64 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Alert,
   Box,
+  Button,
   Card,
   CircularProgress,
-  Typography,
   Fab,
-  Popover,
-  TextField,
-  Button,
-  Snackbar,
-  Alert,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   IconButton,
+  Popover,
+  Snackbar,
+  TextField,
+  Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import ImageIcon from "@mui/icons-material/Image";
 import CloseIcon from "@mui/icons-material/Close";
-import { isAuthenticated, logOut } from "../services/authenticationService";
 import Scene from "./Scene";
 import Post from "../components/Post";
+import { isAuthenticated, logOut } from "../services/authenticationService";
 import {
-  getFriendPosts,
   createPost,
   createPostWithMedia,
+  getMyPosts,
 } from "../services/postService";
-import { createPassword, getIdentityMyInfo } from "../services/userService";
 
-export default function Home() {
+export default function MyPosts() {
+  const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
-  const observer = useRef();
-  const lastPostElementRef = useRef();
   const [anchorEl, setAnchorEl] = useState(null);
   const [newPostContent, setNewPostContent] = useState("");
   const [newPostFile, setNewPostFile] = useState(null);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
   const [snackbarSeverity, setSnackbarSeverity] = useState("success");
-  const [userDetails, setUserDetails] = useState(null);
-  const [showCreatePasswordDialog, setShowCreatePasswordDialog] =
-    useState(false);
-  const [onboardUsername, setOnboardUsername] = useState("");
-  const [onboardPassword, setOnboardPassword] = useState("");
-  const [creatingPassword, setCreatingPassword] = useState(false);
+  const observer = useRef();
+  const lastPostElementRef = useRef();
 
-  const navigate = useNavigate();
-
-  // Handle opening the popover
   const handleCreatePostClick = (event) => {
     setAnchorEl(event.currentTarget);
   };
 
-  // Handle closing the popover
   const handleClosePopover = () => {
     setAnchorEl(null);
     setNewPostContent("");
     setNewPostFile(null);
   };
 
-  // Handle Snackbar close
   const handleSnackbarClose = (event, reason) => {
     if (reason === "clickaway") {
       return;
     }
+
     setSnackbarOpen(false);
   };
 
-  // Handle posting new content
   const handlePostContent = () => {
     if (!newPostContent.trim() && !newPostFile) {
       return;
@@ -87,9 +72,7 @@ export default function Home() {
 
     createPostPromise
       .then((response) => {
-        console.log("Post created successfully:", response.data);
         setPosts((prevPosts) => [response.data.result, ...prevPosts]);
-        setNewPostContent("");
         setNewPostFile(null);
         setSnackbarMessage("Post created successfully!");
         setSnackbarSeverity("success");
@@ -113,8 +96,30 @@ export default function Home() {
     event.target.value = "";
   };
 
-  const open = Boolean(anchorEl);
-  const popoverId = open ? "post-popover" : undefined;
+  const loadPosts = (pageNumber) => {
+    setLoading(true);
+
+    getMyPosts(pageNumber)
+      .then((response) => {
+        setTotalPages(response.data.result.totalPages);
+        setPosts((prevPosts) => [...prevPosts, ...response.data.result.data]);
+        setHasMore(response.data.result.data.length > 0);
+      })
+      .catch((error) => {
+        if (error.response?.status === 401) {
+          logOut();
+          navigate("/login");
+          return;
+        }
+
+        setSnackbarMessage("Failed to load your posts.");
+        setSnackbarSeverity("error");
+        setSnackbarOpen(true);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -125,113 +130,37 @@ export default function Home() {
   }, [navigate, page]);
 
   useEffect(() => {
-    if (!isAuthenticated()) {
+    if (!hasMore) {
       return;
     }
 
-    getIdentityMyInfo()
-      .then((response) => {
-        const info = response.data?.result;
-        setUserDetails(info);
-
-        if (info?.noPassword) {
-          setOnboardUsername(info.username || "");
-          setShowCreatePasswordDialog(true);
-        }
-      })
-      .catch((error) => {
-        if (error.response?.status === 401) {
-          logOut();
-          navigate("/login");
-        }
-      });
-  }, [navigate]);
-
-  const handleCreatePassword = async () => {
-    const normalizedUsername = onboardUsername.trim();
-
-    if (!normalizedUsername || !onboardPassword) {
-      setSnackbarMessage("Please enter username and password.");
-      setSnackbarSeverity("error");
-      setSnackbarOpen(true);
-      return;
+    if (observer.current) {
+      observer.current.disconnect();
     }
 
-    try {
-      setCreatingPassword(true);
-      await createPassword(normalizedUsername, onboardPassword);
-
-      setUserDetails((prev) => ({
-        ...prev,
-        username: normalizedUsername,
-        noPassword: false,
-      }));
-      setShowCreatePasswordDialog(false);
-      setOnboardPassword("");
-      setSnackbarMessage(
-        "Your password has been created. You can use username/password to login."
-      );
-      setSnackbarSeverity("success");
-      setSnackbarOpen(true);
-    } catch (error) {
-      const message =
-        error.response?.data?.message || "Failed to create password.";
-      setSnackbarMessage(message);
-      setSnackbarSeverity("error");
-      setSnackbarOpen(true);
-    } finally {
-      setCreatingPassword(false);
-    }
-  };
-
-  const loadPosts = (page) => {
-    console.log(`loading posts for page ${page}`);
-    setLoading(true);
-    getFriendPosts(page)
-      .then((response) => {
-        setTotalPages(response.data.result.totalPages);
-        setPosts((prevPosts) => [...prevPosts, ...response.data.result.data]);
-        setHasMore(response.data.result.data.length > 0);
-        console.log("loaded posts:", response.data.result);
-      })
-      .catch((error) => {
-        if (error.response.status === 401) {
-          logOut();
-          navigate("/login");
-        }
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    if (!hasMore) return;
-
-    if (observer.current) observer.current.disconnect();
     observer.current = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        if (page < totalPages) {
-          setPage((prevPage) => prevPage + 1);
-        }
+      if (entries[0].isIntersecting && page < totalPages) {
+        setPage((prevPage) => prevPage + 1);
       }
     });
+
     if (lastPostElementRef.current) {
       observer.current.observe(lastPostElementRef.current);
     }
 
     setHasMore(false);
-  }, [hasMore]);
+  }, [hasMore, page, totalPages]);
+
+  const open = Boolean(anchorEl);
 
   return (
     <Scene>
-      {" "}
       <Snackbar
         open={snackbarOpen}
         autoHideDuration={6000}
         onClose={handleSnackbarClose}
         anchorOrigin={{ vertical: "top", horizontal: "right" }}
-        sx={{ marginTop: "64px" }} // Position below the header
+        sx={{ marginTop: "64px" }}
       >
         <Alert
           onClose={handleSnackbarClose}
@@ -241,6 +170,7 @@ export default function Home() {
           {snackbarMessage}
         </Alert>
       </Snackbar>
+
       <Card
         sx={{
           minWidth: 500,
@@ -260,85 +190,24 @@ export default function Home() {
             gap: "10px",
           }}
         >
-          <Typography
-            sx={{
-              fontSize: 18,
-              mb: "10px",
-            }}
-          >
-            Friends posts,
-          </Typography>
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-              width: "100%", // Ensure content takes full width
-            }}
-          ></Box>
+          <Typography sx={{ fontSize: 18, mb: "10px" }}>My posts,</Typography>
+
           {posts.map((post, index) => {
             if (posts.length === index + 1) {
-              return (
-                <Post ref={lastPostElementRef} key={post.id} post={post} />
-              );
-            } else {
-              return <Post key={post.id} post={post} />;
+              return <Post ref={lastPostElementRef} key={post.id} post={post} />;
             }
+
+            return <Post key={post.id} post={post} />;
           })}
+
           {loading && (
-            <Box
-              sx={{ display: "flex", justifyContent: "center", width: "100%" }}
-            >
+            <Box sx={{ display: "flex", justifyContent: "center", width: "100%" }}>
               <CircularProgress size="24px" />
             </Box>
           )}
         </Box>
       </Card>
 
-      <Dialog
-        open={showCreatePasswordDialog}
-        onClose={() => {}}
-        disableEscapeKeyDown
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>Create password for your account</DialogTitle>
-        <DialogContent>
-          <Typography sx={{ mb: 2 }}>
-            This account was created by Google login. Please set username and
-            password to complete your account.
-          </Typography>
-          <TextField
-            label="Username"
-            variant="outlined"
-            fullWidth
-            margin="normal"
-            value={onboardUsername}
-            onChange={(e) => setOnboardUsername(e.target.value)}
-          />
-          <TextField
-            label="Password"
-            type="password"
-            variant="outlined"
-            fullWidth
-            margin="normal"
-            value={onboardPassword}
-            onChange={(e) => setOnboardPassword(e.target.value)}
-          />
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button
-            variant="contained"
-            onClick={handleCreatePassword}
-            disabled={creatingPassword}
-          >
-            {creatingPassword ? "Saving..." : "Create password"}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Floating Action Button for creating new posts */}
       <Fab
         color="primary"
         aria-label="add"
@@ -351,9 +220,8 @@ export default function Home() {
       >
         <AddIcon />
       </Fab>
-      {/* Popover for creating new post */}{" "}
+
       <Popover
-        id={popoverId}
         open={open}
         anchorEl={anchorEl}
         onClose={handleClosePopover}

@@ -7,6 +7,7 @@ import Chat from "../pages/Chat";
 import Authenticate from "../pages/Authenticate";
 import Register from "../pages/Register";
 import Friends from "../pages/Friends";
+import MyPosts from "../pages/MyPosts";
 
 const authLightTheme = createTheme({
   palette: {
@@ -55,6 +56,7 @@ const AppRoutes = () => {
         <Route path="/profile" element={<Profile />} />
         <Route path="/profile/:profileId" element={<Profile />} />
         <Route path="/friends" element={<Friends />} />
+        <Route path="/my-posts" element={<MyPosts />} />
         <Route path="/chat" element={<Chat />} />
       </Routes>
     </Router>
