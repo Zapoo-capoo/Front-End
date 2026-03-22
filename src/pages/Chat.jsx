@@ -16,6 +16,7 @@ import {
   CircularProgress,
   Alert,
   Stack,
+  useTheme,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import AddIcon from "@mui/icons-material/Add";
@@ -32,6 +33,7 @@ import { io } from "socket.io-client";
 import { getToken } from "../services/localStorageService";
 
 export default function Chat() {
+  const theme = useTheme();
   const [message, setMessage] = useState("");
   const [newChatAnchorEl, setNewChatAnchorEl] = useState(null);
   const [conversations, setConversations] = useState([]);
@@ -553,11 +555,24 @@ export default function Chat() {
                   }}
                 >
                   {currentMessages.map((msg) => {
-                    // Extract background color logic to avoid nested ternary
-                    let backgroundColor = "#f5f5f5"; // default for others
-                    if (msg.me) {
-                      backgroundColor = msg.failed ? "#ffebee" : "#e3f2fd";
-                    }
+                    const isDarkMode = theme.palette.mode === "dark";
+
+                    // Dark mode: sender bubble dark blue, receiver bubble gray.
+                    const senderBackgroundColor = isDarkMode
+                      ? "#0d47a1"
+                      : msg.failed
+                      ? "#ffebee"
+                      : "#e3f2fd";
+
+                    const receiverBackgroundColor = isDarkMode
+                      ? "#424242"
+                      : "#f5f5f5";
+
+                    const backgroundColor = msg.me
+                      ? senderBackgroundColor
+                      : receiverBackgroundColor;
+
+                    const messageTextColor = isDarkMode ? "#ffffff" : "inherit";
 
                     return (
                       <Box
@@ -585,6 +600,7 @@ export default function Chat() {
                             p: 2,
                             maxWidth: "70%",
                             backgroundColor,
+                            color: messageTextColor,
                             borderRadius: 2,
                             opacity: msg.pending ? 0.7 : 1,
                           }}

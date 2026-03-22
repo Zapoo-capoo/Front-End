@@ -64,3 +64,54 @@ export const search = async (keyword) => {
     }
   );
 };
+
+export const getMyFriends = async () => {
+  return await httpClient.get(API.MY_FRIENDS, {
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+};
+
+export const getSentFriendRequests = async () => {
+  return await httpClient.get(API.SENT_FRIEND_REQUESTS, {
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+};
+
+export const getReceivedFriendRequests = async () => {
+  return await httpClient.get(API.RECEIVED_FRIEND_REQUESTS, {
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+};
+
+export const sendFriendRequest = async (username) => {
+  return await httpClient.post(API.SEND_FRIEND_REQUEST, null, {
+    params: { username },
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+};
+
+export const unfriend = async (id) => {
+  return await httpClient.post(API.UNFRIEND, null, {
+    params: { id },
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+};
+
+export const rejectFriendRequest = async (id) => {
+  return await httpClient.post(API.REJECT_FRIEND_REQUEST, null, {
+    params: { id },
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+};

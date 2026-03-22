@@ -6,12 +6,20 @@ import InputBase from "@mui/material/InputBase";
 import Badge from "@mui/material/Badge";
 import MenuItem from "@mui/material/MenuItem";
 import Menu from "@mui/material/Menu";
+import Switch from "@mui/material/Switch";
+import ListItemText from "@mui/material/ListItemText";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
+import Button from "@mui/material/Button";
 import SearchIcon from "@mui/icons-material/Search";
 import AccountCircle from "@mui/icons-material/AccountCircle";
 import MailIcon from "@mui/icons-material/Mail";
 import NotificationsIcon from "@mui/icons-material/Notifications";
 import MoreIcon from "@mui/icons-material/MoreVert";
 import { logOut } from "../services/authenticationService";
+import { ColorModeContext } from "../App";
 
 const Search = styled("div")(({ theme }) => ({
   position: "relative",
@@ -54,8 +62,10 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
 }));
 
 export default function Header() {
+  const colorMode = React.useContext(ColorModeContext);
   const [anchorEl, setAnchorEl] = React.useState(null);
   const [mobileMoreAnchorEl, setMobileMoreAnchorEl] = React.useState(null);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   const isMenuOpen = Boolean(anchorEl);
   const isMobileMenuOpen = Boolean(mobileMoreAnchorEl);
@@ -76,6 +86,15 @@ export default function Header() {
   const handleOpenProfile = () => {
     setAnchorEl(null);
     window.location.href = "/profile";
+  };
+
+  const handleOpenSettings = () => {
+    handleMenuClose();
+    setSettingsOpen(true);
+  };
+
+  const handleCloseSettings = () => {
+    setSettingsOpen(false);
   };
 
   const handleMobileMenuOpen = (event) => {
@@ -106,7 +125,7 @@ export default function Header() {
       onClose={handleMenuClose}
     >
       <MenuItem onClick={handleOpenProfile}>Profile</MenuItem>
-      <MenuItem onClick={handleMenuClose}>Settings</MenuItem>
+      <MenuItem onClick={handleOpenSettings}>Settings</MenuItem>
       <MenuItem onClick={handleLogout}>Log Out</MenuItem>
     </Menu>
   );
@@ -234,6 +253,22 @@ export default function Header() {
       </Box>
       {renderMobileMenu}
       {renderMenu}
+      <Dialog open={settingsOpen} onClose={handleCloseSettings} fullWidth>
+        <DialogTitle>Settings</DialogTitle>
+        <DialogContent>
+          <MenuItem
+            disableGutters
+            sx={{ px: 0 }}
+            onClick={colorMode.toggleColorMode}
+          >
+            <ListItemText primary="Dark mode" />
+            <Switch checked={colorMode.mode === "dark"} />
+          </MenuItem>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseSettings}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }

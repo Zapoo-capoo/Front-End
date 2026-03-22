@@ -5,6 +5,7 @@ import Profile from "../pages/Profile";
 import Chat from "../pages/Chat";
 import Authenticate from "../pages/Authenticate";
 import Register from "../pages/Register";
+import Friends from "../pages/Friends";
 
 const AppRoutes = () => {
   return (
@@ -15,6 +16,7 @@ const AppRoutes = () => {
         <Route path="/authenticate" element={<Authenticate />} />
         <Route path="/" element={<Home />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/friends" element={<Friends />} />
         <Route path="/chat" element={<Chat />} />
       </Routes>
     </Router>
