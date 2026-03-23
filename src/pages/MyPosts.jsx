@@ -23,6 +23,7 @@ import {
   createPost,
   createPostWithMedia,
   getMyPosts,
+  deletePost,
 } from "../services/postService";
 
 export default function MyPosts() {
@@ -94,6 +95,22 @@ export default function MyPosts() {
 
     setNewPostFile(file);
     event.target.value = "";
+  };
+
+  const handleDeletePost = (postId) => {
+    deletePost(postId)
+      .then(() => {
+        setPosts((prevPosts) => prevPosts.filter((post) => post.id !== postId));
+        setSnackbarMessage("Post deleted successfully!");
+        setSnackbarSeverity("success");
+        setSnackbarOpen(true);
+      })
+      .catch((error) => {
+        console.error("Error deleting post:", error);
+        setSnackbarMessage("Failed to delete post. Please try again.");
+        setSnackbarSeverity("error");
+        setSnackbarOpen(true);
+      });
   };
 
   const loadPosts = (pageNumber) => {
@@ -194,10 +211,25 @@ export default function MyPosts() {
 
           {posts.map((post, index) => {
             if (posts.length === index + 1) {
-              return <Post ref={lastPostElementRef} key={post.id} post={post} />;
+              return (
+                <Post
+                  ref={lastPostElementRef}
+                  key={post.id}
+                  post={post}
+                  isOwnPost={true}
+                  onDelete={handleDeletePost}
+                />
+              );
             }
 
-            return <Post key={post.id} post={post} />;
+            return (
+              <Post
+                key={post.id}
+                post={post}
+                isOwnPost={true}
+                onDelete={handleDeletePost}
+              />
+            );
           })}
 
           {loading && (

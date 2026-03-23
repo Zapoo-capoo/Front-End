@@ -50,3 +50,11 @@ export const getMessages = async (conversationId) => {
     },
   });
 };
+
+export const deleteMessage = async (messageId) => {
+  return await httpClient.delete(`${API.DELETE_MESSAGE}/${messageId}`, {
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+};

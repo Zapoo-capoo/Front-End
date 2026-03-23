@@ -17,10 +17,13 @@ import {
   Alert,
   Stack,
   useTheme,
+  Menu,
+  MenuItem,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import DeleteIcon from "@mui/icons-material/Delete";
 import Scene from "./Scene";
 import NewChatPopover from "../components/NewChatPopover";
 import {
@@ -28,6 +31,7 @@ import {
   createConversation,
   getMessages,
   createMessage,
+  deleteMessage,
 } from "../services/chatService";
 import { io } from "socket.io-client";
 import { getToken } from "../services/localStorageService";
@@ -49,6 +53,8 @@ export default function Chat() {
   const [error, setError] = useState(null);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messagesMap, setMessagesMap] = useState({});
+  const [messageContextMenu, setMessageContextMenu] = useState(null);
+  const [selectedMessageId, setSelectedMessageId] = useState(null);
   const messageContainerRef = useRef(null);
   const socketRef = useRef(null); // Function to scroll to the bottom of the message container
   const scrollToBottom = useCallback(() => {
@@ -286,6 +292,26 @@ export default function Chat() {
           handleIncomingMessage(messageObject);
         }
       });
+
+      socketRef.current.on("message:delete", (deleteEvent) => {
+        console.log("Message delete event received:", deleteEvent);
+
+        const deleteObject = JSON.parse(deleteEvent);
+        const { messageId, conversationId } = deleteObject;
+
+        // Remove deleted message from the UI
+        if (conversationId) {
+          setMessagesMap((prev) => {
+            const updatedMessages = (prev[conversationId] || []).filter(
+              (msg) => msg.id !== messageId
+            );
+            return {
+              ...prev,
+              [conversationId]: updatedMessages,
+            };
+          });
+        }
+      });
     }
 
     // Cleanup function - disconnect socket when component unmounts
@@ -328,6 +354,46 @@ export default function Chat() {
       });
     } catch (error) {
       console.error("Failed to send message:", error);
+    }
+  };
+
+  // Message context menu handlers
+  const handleMessageContextMenu = (event, messageId) => {
+    event.preventDefault();
+    setMessageContextMenu(event.currentTarget);
+    setSelectedMessageId(messageId);
+  };
+
+  const handleCloseMessageContextMenu = () => {
+    setMessageContextMenu(null);
+    setSelectedMessageId(null);
+  };
+
+  const handleDeleteMessage = async () => {
+    if (!selectedMessageId) return;
+
+    try {
+      // Call API to delete message
+      await deleteMessage(selectedMessageId);
+
+      // Remove message from UI
+      setMessagesMap((prev) => {
+        if (selectedConversation) {
+          const updatedMessages = prev[selectedConversation.id].filter(
+            (msg) => msg.id !== selectedMessageId
+          );
+          return {
+            ...prev,
+            [selectedConversation.id]: updatedMessages,
+          };
+        }
+        return prev;
+      });
+
+      // Close context menu
+      handleCloseMessageContextMenu();
+    } catch (error) {
+      console.error("Failed to delete message:", error);
     }
   };
 
@@ -692,6 +758,11 @@ export default function Chat() {
                         )}
                         <Paper
                           elevation={1}
+                          onClick={(e) => {
+                            if (msg.me) {
+                              handleMessageContextMenu(e, msg.id);
+                            }
+                          }}
                           sx={{
                             p: 2,
                             maxWidth: "70%",
@@ -699,6 +770,7 @@ export default function Chat() {
                             color: messageTextColor,
                             borderRadius: 2,
                             opacity: msg.pending ? 0.7 : 1,
+                            cursor: msg.me ? "pointer" : "default",
                           }}
                         >
                           <Typography variant="body1">{msg.message}</Typography>
@@ -794,6 +866,18 @@ export default function Chat() {
             </Box>
           )}
         </Box>
+
+        {/* Message Context Menu */}
+        <Menu
+          anchorEl={messageContextMenu}
+          open={Boolean(messageContextMenu)}
+          onClose={handleCloseMessageContextMenu}
+        >
+          <MenuItem onClick={handleDeleteMessage}>
+            <DeleteIcon sx={{ mr: 1, fontSize: "small" }} />
+            Delete Message
+          </MenuItem>
+        </Menu>
       </Card>
     </Scene>
   );

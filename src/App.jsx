@@ -12,7 +12,7 @@ const THEME_MODE_STORAGE_KEY = "zapoo-theme-mode";
 function App() {
   const [mode, setMode] = useState(() => {
     const savedMode = localStorage.getItem(THEME_MODE_STORAGE_KEY);
-    return savedMode === "dark" ? "dark" : "light";
+    return savedMode === "light" ? "light" : "dark";
   });
 
   const colorModeContextValue = useMemo(

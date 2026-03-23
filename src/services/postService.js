@@ -57,3 +57,11 @@ export const createPostWithMedia = async (content, file) => {
     },
   });
 };
+
+export const deletePost = async (postId) => {
+  return await httpClient.delete(`${API.DELETE_POST}/${postId}`, {
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+};

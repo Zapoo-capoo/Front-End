@@ -1,8 +1,27 @@
-import { Box, Avatar, Typography } from "@mui/material";
-import React, { forwardRef } from 'react';
+import { Box, Avatar, Typography, IconButton, Menu, MenuItem } from "@mui/material";
+import React, { forwardRef, useState } from 'react';
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import DeleteIcon from "@mui/icons-material/Delete";
 
 const Post = forwardRef((props, ref) => {
   const { avatar, username, created, content, mediaUrl } = props.post;
+  const { isOwnPost, onDelete } = props;
+  const [anchorEl, setAnchorEl] = useState(null);
+
+  const handleMenuOpen = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleDeleteClick = () => {
+    handleMenuClose();
+    if (onDelete) {
+      onDelete(props.post.id);
+    }
+  };
   return (
     <Box
       ref={ref}
@@ -19,11 +38,12 @@ const Post = forwardRef((props, ref) => {
           flexDirection: "row",
           alignItems: "start",
           marginBottom: 2,
+          flex: 1,
         }}
       >
         <Avatar src={avatar} sx={{ marginRight: 2 }} />
-        <Box>
-          <Box sx={{ display: "flex", flexDirection: "row", gap: "10px" }}>
+        <Box sx={{ flex: 1 }}>
+          <Box sx={{ display: "flex", flexDirection: "row", gap: "10px", alignItems: "center" }}>
             <Typography
               sx={{
                 fontSize: 14,
@@ -67,6 +87,28 @@ const Post = forwardRef((props, ref) => {
           )}
         </Box>
       </Box>
+      
+      {isOwnPost && (
+        <Box>
+          <IconButton
+            size="small"
+            onClick={handleMenuOpen}
+            sx={{ ml: 1 }}
+          >
+            <MoreVertIcon fontSize="small" />
+          </IconButton>
+          <Menu
+            anchorEl={anchorEl}
+            open={Boolean(anchorEl)}
+            onClose={handleMenuClose}
+          >
+            <MenuItem onClick={handleDeleteClick}>
+              <DeleteIcon sx={{ mr: 1, fontSize: "small" }} />
+              Delete
+            </MenuItem>
+          </Menu>
+        </Box>
+      )}
     </Box>
   );
 });

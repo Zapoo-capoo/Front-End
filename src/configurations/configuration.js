@@ -21,6 +21,7 @@ export const API = {
   FRIEND_POSTS: "/post/friends-posts",
   CREATE_POST: "/post/create",
   CREATE_POST_WITH_MEDIA: "/post/create-with-media",
+  DELETE_POST: "/post",
   UPDATE_PROFILE: "/profile/users/my-profile",
   UPDATE_AVATAR: "/profile/users/avatar",
   SEARCH_USER: "/profile/users/search",
@@ -34,4 +35,5 @@ export const API = {
   CREATE_CONVERSATION: "/chat/conversations/create",
   CREATE_MESSAGE: "/chat/messages/create",
   GET_CONVERSATION_MESSAGES: "/chat/messages",
+  DELETE_MESSAGE: "/chat/messages",
 };
