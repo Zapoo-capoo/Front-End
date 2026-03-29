@@ -40,14 +40,19 @@ import {
   deleteMessage,
 } from "../services/chatService";
 import { io } from "socket.io-client";
-import { getToken } from "../services/localStorageService";
+import { getToken, getCurrentUserId } from "../services/localStorageService";
 
-const resolveLatestIncomingAvatar = (messages, fallbackAvatar = "") => {
+const resolveLatestIncomingAvatar = (messages, fallbackAvatar = "", currentUserId = null) => {
   const latestIncomingMessageWithAvatar = [...messages]
     .reverse()
-    .find((msg) => !msg.me && msg?.sender?.avatar);
+    .find((msg) => msg?.sender?.userId !== currentUserId && msg?.sender?.avatar);
 
   return latestIncomingMessageWithAvatar?.sender?.avatar || fallbackAvatar;
+};
+
+const isMessageFromCurrentUser = (message) => {
+  const currentUserId = getCurrentUserId();
+  return message?.sender?.userId === currentUserId;
 };
 
 export default function Chat() {
@@ -190,35 +195,11 @@ export default function Chat() {
               [conversationId]: 1,
             }));
 
-            const latestIncomingAvatar = resolveLatestIncomingAvatar(
-              sortedMessages
-            );
-
             // Update messages map with the fetched messages
             setMessagesMap((prev) => ({
               ...prev,
               [conversationId]: sortedMessages,
             }));
-
-            // Keep conversation avatar in sync with the latest incoming message avatar.
-            if (latestIncomingAvatar) {
-              setConversations((prevConversations) =>
-                prevConversations.map((conv) =>
-                  conv.id === conversationId
-                    ? { ...conv, conversationAvatar: latestIncomingAvatar }
-                    : conv
-                )
-              );
-
-              setSelectedConversation((prevSelectedConversation) =>
-                prevSelectedConversation?.id === conversationId
-                  ? {
-                      ...prevSelectedConversation,
-                      conversationAvatar: latestIncomingAvatar,
-                    }
-                  : prevSelectedConversation
-              );
-            }
           }
         }
 
@@ -243,46 +224,8 @@ export default function Chat() {
   const currentMessages = selectedConversation
     ? messagesMap[selectedConversation.id] || []
     : [];
-  const latestIncomingAvatarForConversation = selectedConversation
-    ? resolveLatestIncomingAvatar(
-        currentMessages,
-        selectedConversation.conversationAvatar
-      )
-    : "";
 
-  useEffect(() => {
-    if (!selectedConversation?.id || currentMessages.length === 0) {
-      return;
-    }
 
-    const latestIncomingAvatar = resolveLatestIncomingAvatar(
-      currentMessages,
-      selectedConversation.conversationAvatar
-    );
-
-    if (!latestIncomingAvatar) {
-      return;
-    }
-
-    if (latestIncomingAvatar !== selectedConversation.conversationAvatar) {
-      setSelectedConversation((prevSelectedConversation) =>
-        prevSelectedConversation
-          ? {
-              ...prevSelectedConversation,
-              conversationAvatar: latestIncomingAvatar,
-            }
-          : prevSelectedConversation
-      );
-    }
-
-    setConversations((prevConversations) =>
-      prevConversations.map((conv) =>
-        conv.id === selectedConversation.id
-          ? { ...conv, conversationAvatar: latestIncomingAvatar }
-          : conv
-      )
-    );
-  }, [currentMessages, selectedConversation]);
 
   // Automatically scroll to the bottom when messages change or after sending a message
   // But NOT when loading older messages and NOT immediately after finishing load
@@ -657,7 +600,7 @@ export default function Chat() {
           }
 
           const nextConversationAvatar =
-            !message.me && message?.sender?.avatar
+            !isMessageFromCurrentUser(message) && message?.sender?.avatar
               ? message.sender.avatar
               : conv.conversationAvatar;
 
@@ -959,7 +902,7 @@ export default function Chat() {
                       ? "#424242"
                       : "#f5f5f5";
 
-                    const backgroundColor = msg.me
+                    const backgroundColor = isMessageFromCurrentUser(msg)
                       ? senderBackgroundColor
                       : receiverBackgroundColor;
 
@@ -971,16 +914,13 @@ export default function Chat() {
                         ref={index === 0 ? firstMessageRef : null}
                         sx={{
                           display: "flex",
-                          justifyContent: msg.me ? "flex-end" : "flex-start",
+                          justifyContent: isMessageFromCurrentUser(msg) ? "flex-end" : "flex-start",
                           mb: 2,
                         }}
                       >
-                        {!msg.me && (
+                        {!isMessageFromCurrentUser(msg) && (
                           <Avatar
-                            src={
-                              latestIncomingAvatarForConversation ||
-                              msg.sender?.avatar
-                            }
+                            src={msg.sender?.avatar}
                             sx={{
                               mr: 1,
                               alignSelf: "flex-end",
@@ -992,7 +932,7 @@ export default function Chat() {
                         <Paper
                           elevation={1}
                           onClick={(e) => {
-                            if (msg.me) {
+                            if (isMessageFromCurrentUser(msg)) {
                               handleMessageContextMenu(e, msg.id);
                             }
                           }}
@@ -1003,7 +943,7 @@ export default function Chat() {
                             color: messageTextColor,
                             borderRadius: 2,
                             opacity: msg.pending ? 0.7 : 1,
-                            cursor: msg.me ? "pointer" : "default",
+                            cursor: isMessageFromCurrentUser(msg) ? "pointer" : "default",
                           }}
                         >
                           {msg.imgUrl && (
@@ -1050,7 +990,7 @@ export default function Chat() {
                             </Typography>
                           </Stack>{" "}
                         </Paper>
-                        {msg.me && (
+                        {isMessageFromCurrentUser(msg) && (
                           <Avatar
                             sx={{
                               ml: 1,
