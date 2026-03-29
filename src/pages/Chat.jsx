@@ -19,11 +19,16 @@ import {
   useTheme,
   Menu,
   MenuItem,
+  Tooltip,
+  ImageList,
+  ImageListItem,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import DeleteIcon from "@mui/icons-material/Delete";
+import ImageIcon from "@mui/icons-material/Image";
+import CloseIcon from "@mui/icons-material/Close";
 import Scene from "./Scene";
 import NewChatPopover from "../components/NewChatPopover";
 import {
@@ -31,6 +36,7 @@ import {
   createConversation,
   getMessages,
   createMessage,
+  createMessageWithImage,
   deleteMessage,
 } from "../services/chatService";
 import { io } from "socket.io-client";
@@ -55,7 +61,18 @@ export default function Chat() {
   const [messagesMap, setMessagesMap] = useState({});
   const [messageContextMenu, setMessageContextMenu] = useState(null);
   const [selectedMessageId, setSelectedMessageId] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [pageMap, setPageMap] = useState({});
+  const [totalPagesMap, setTotalPagesMap] = useState({});
+  const [hasMoreMap, setHasMoreMap] = useState({});
+  const [loadingOldMessagesMap, setLoadingOldMessagesMap] = useState({});
+  const fileInputRef = useRef(null);
   const messageContainerRef = useRef(null);
+  const firstMessageRef = useRef(null);
+  const observerRef = useRef(null);
+  const scrollHeightBeforeRef = useRef(0);
+  const prevLoadingStateRef = useRef({});
   const socketRef = useRef(null); // Function to scroll to the bottom of the message container
   const scrollToBottom = useCallback(() => {
     if (messageContainerRef.current) {
@@ -149,16 +166,29 @@ export default function Chat() {
 
   // Load messages from the conversation history when a conversation is selected
   useEffect(() => {
-    const fetchMessages = async (conversationId) => {
+    const fetchMessages = async (conversationId, pageNum = 1) => {
       try {
         // Check if we already have messages for this conversation
-        if (!messagesMap[conversationId]) {
-          const response = await getMessages(conversationId);
+        if (pageNum === 1 && !messagesMap[conversationId]) {
+          const response = await getMessages(conversationId, pageNum, 20);
           if (response?.data?.result) {
+            const messageData = response.data.result;
+            
             // Sort messages by createdDate to ensure chronological order
-            const sortedMessages = [...response.data.result].sort(
+            const sortedMessages = [...messageData.data].sort(
               (a, b) => new Date(a.createdDate) - new Date(b.createdDate)
             );
+
+            // Initialize pagination state
+            setTotalPagesMap((prev) => ({
+              ...prev,
+              [conversationId]: messageData.totalPages,
+            }));
+
+            setPageMap((prev) => ({
+              ...prev,
+              [conversationId]: 1,
+            }));
 
             const latestIncomingAvatar = resolveLatestIncomingAvatar(
               sortedMessages
@@ -255,9 +285,27 @@ export default function Chat() {
   }, [currentMessages, selectedConversation]);
 
   // Automatically scroll to the bottom when messages change or after sending a message
+  // But NOT when loading older messages and NOT immediately after finishing load
   useEffect(() => {
-    scrollToBottom();
-  }, [currentMessages, scrollToBottom]);
+    const conversationId = selectedConversation?.id;
+    if (!conversationId) {
+      return;
+    }
+
+    const isLoading = loadingOldMessagesMap[conversationId];
+    const wasLoading = prevLoadingStateRef.current[conversationId];
+
+    // Update previous state
+    prevLoadingStateRef.current[conversationId] = isLoading;
+
+    // Don't scroll to bottom if:
+    // 1. Currently loading old messages
+    // 2. Just finished loading old messages (transition from loading to not loading)
+    const justFinishedLoading = wasLoading && !isLoading;
+    if (!isLoading && !justFinishedLoading) {
+      scrollToBottom();
+    }
+  }, [currentMessages, scrollToBottom, loadingOldMessagesMap, selectedConversation]);
 
   // Also scroll when the conversation changes
   useEffect(() => {
@@ -336,22 +384,193 @@ export default function Chat() {
     }
   }, [selectedConversation]);
 
+  // IntersectionObserver for scroll-up pagination
+  useEffect(() => {
+    const conversationId = selectedConversation?.id;
+    if (!conversationId) {
+      return;
+    }
+
+    const currentPage = pageMap[conversationId] || 1;
+    const totalPages = totalPagesMap[conversationId] || 1;
+    const isLoading = loadingOldMessagesMap[conversationId] || false;
+
+    // Don't set up observer if already loading, no more pages, or no conversation selected
+    if (isLoading || currentPage >= totalPages) {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+      return;
+    }
+
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+    }
+
+    let observerInstance = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          // Check again to avoid double-loading
+          const convId = selectedConversation.id;
+          const currPage = pageMap[convId] || 1;
+          const totalPgs = totalPagesMap[convId] || 1;
+          const isAlreadyLoading = loadingOldMessagesMap[convId] || false;
+
+          if (!isAlreadyLoading && currPage < totalPgs) {
+            const nextPage = currPage + 1;
+
+            // Capture scroll height BEFORE loading
+            const scrollContainer = messageContainerRef.current;
+            if (scrollContainer) {
+              scrollHeightBeforeRef.current = scrollContainer.scrollHeight;
+            }
+
+            // Mark as loading BEFORE making the request
+            setLoadingOldMessagesMap((prev) => ({
+              ...prev,
+              [convId]: true,
+            }));
+
+            getMessages(convId, nextPage, 20)
+              .then((response) => {
+                if (response?.data?.result?.data?.length > 0) {
+                  const newMessages = response.data.result.data.sort(
+                    (a, b) => new Date(a.createdDate) - new Date(b.createdDate)
+                  );
+
+                  // Prepend new messages (older messages go to the top)
+                  setMessagesMap((prev) => ({
+                    ...prev,
+                    [convId]: [
+                      ...newMessages,
+                      ...(prev[convId] || []),
+                    ],
+                  }));
+
+                  // Update page number
+                  setPageMap((prev) => ({
+                    ...prev,
+                    [convId]: nextPage,
+                  }));
+                }
+              })
+              .catch((error) => {
+                console.error("Error loading older messages:", error);
+              })
+              .finally(() => {
+                // Mark as done loading
+                setLoadingOldMessagesMap((prev) => ({
+                  ...prev,
+                  [convId]: false,
+                }));
+              });
+          }
+        }
+      },
+      {
+        root: messageContainerRef.current,
+        rootMargin: "100px",
+        threshold: 0.01,
+      }
+    );
+
+    observerRef.current = observerInstance;
+
+    if (firstMessageRef.current) {
+      observerInstance.observe(firstMessageRef.current);
+    }
+
+    return () => {
+      if (observerInstance) {
+        observerInstance.disconnect();
+      }
+    };
+  }, [selectedConversation?.id, pageMap, totalPagesMap, loadingOldMessagesMap, selectedConversation]);
+
+  // Effect to handle scroll position after loading old messages
+  useEffect(() => {
+    const conversationId = selectedConversation?.id;
+    if (!conversationId || !currentMessages) {
+      return;
+    }
+
+    const isLoading = loadingOldMessagesMap[conversationId];
+    const wasLoadingBefore = prevLoadingStateRef.current[conversationId];
+
+    // If we just finished loading old messages AND we have scroll height to restore, do it
+    const justFinishedLoading = wasLoadingBefore && !isLoading;
+    if (justFinishedLoading && scrollHeightBeforeRef.current > 0) {
+      const scrollContainer = messageContainerRef.current;
+      if (scrollContainer) {
+        const heightDifference =
+          scrollContainer.scrollHeight - scrollHeightBeforeRef.current;
+        
+        // Preserve scroll position by scrolling down by the height of new messages
+        requestAnimationFrame(() => {
+          if (scrollContainer && heightDifference > 0) {
+            scrollContainer.scrollTop += heightDifference;
+          }
+          scrollHeightBeforeRef.current = 0;
+        });
+      }
+    }
+
+    // Update the previous state for next comparison
+    prevLoadingStateRef.current[conversationId] = isLoading;
+  }, [currentMessages, loadingOldMessagesMap, selectedConversation?.id]);
+
   const handleConversationSelect = (conversation) => {
     setSelectedConversation(conversation);
   };
 
-  const handleSendMessage = async () => {
-    if (!message.trim() || !selectedConversation) return;
+  const handleFileSelect = (event) => {
+    const file = event.target.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setPreviewImage(e.target?.result);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      alert("Please select a valid image file");
+    }
+  };
 
-    // Clear input field
+  const handleClearImage = () => {
+    setSelectedFile(null);
+    setPreviewImage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!message.trim() && !selectedFile) return;
+    if (!selectedConversation) return;
+
+    // Store values before clearing
+    const messageText = message;
+    const file = selectedFile;
+
+    // Clear input fields
     setMessage("");
+    handleClearImage();
 
     try {
       // Send message to API
-      const response = await createMessage({
-        conversationId: selectedConversation.id,
-        message: message,
-      });
+      if (file) {
+        const response = await createMessageWithImage({
+          conversationId: selectedConversation.id,
+          message: messageText,
+          file: file,
+        });
+      } else {
+        const response = await createMessage({
+          conversationId: selectedConversation.id,
+          message: messageText,
+        });
+      }
     } catch (error) {
       console.error("Failed to send message:", error);
     }
@@ -713,7 +932,20 @@ export default function Chat() {
                       "auto 0 0 0" /* Push to bottom, but allow scrolling */,
                   }}
                 >
-                  {currentMessages.map((msg) => {
+                  {loadingOldMessagesMap[selectedConversation?.id] && (
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        p: 2,
+                        minHeight: 60,
+                      }}
+                    >
+                      <CircularProgress size={32} />
+                    </Box>
+                  )}
+                  {currentMessages.map((msg, index) => {
                     const isDarkMode = theme.palette.mode === "dark";
 
                     // Dark mode: sender bubble dark blue, receiver bubble gray.
@@ -736,6 +968,7 @@ export default function Chat() {
                     return (
                       <Box
                         key={msg.id}
+                        ref={index === 0 ? firstMessageRef : null}
                         sx={{
                           display: "flex",
                           justifyContent: msg.me ? "flex-end" : "flex-start",
@@ -773,7 +1006,22 @@ export default function Chat() {
                             cursor: msg.me ? "pointer" : "default",
                           }}
                         >
-                          <Typography variant="body1">{msg.message}</Typography>
+                          {msg.imgUrl && (
+                            <Box
+                              component="img"
+                              src={msg.imgUrl}
+                              alt="Message image"
+                              sx={{
+                                maxWidth: "100%",
+                                maxHeight: 300,
+                                borderRadius: 1,
+                                mb: msg.message ? 1 : 0,
+                              }}
+                            />
+                          )}
+                          {msg.message && (
+                            <Typography variant="body1">{msg.message}</Typography>
+                          )}
                           <Stack
                             direction="row"
                             spacing={1}
@@ -821,34 +1069,97 @@ export default function Chat() {
                 </Box>
               </Box>
               <Box
-                component="form"
                 sx={{
                   p: 2,
                   borderTop: 1,
                   borderColor: "divider",
                   display: "flex",
-                }}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSendMessage();
+                  flexDirection: "column",
+                  gap: 1,
                 }}
               >
-                <TextField
-                  fullWidth
-                  placeholder="Type a message"
-                  variant="outlined"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  size="small"
-                />
-                <IconButton
-                  color="primary"
-                  sx={{ ml: 1 }}
-                  onClick={handleSendMessage}
-                  disabled={!message.trim()}
+                {previewImage && (
+                  <Box
+                    sx={{
+                      position: "relative",
+                      display: "inline-block",
+                      width: "fit-content",
+                    }}
+                  >
+                    <Box
+                      component="img"
+                      src={previewImage}
+                      alt="Preview"
+                      sx={{
+                        maxWidth: 150,
+                        maxHeight: 150,
+                        borderRadius: 1,
+                        border: "2px solid #1976d2",
+                      }}
+                    />
+                    <Tooltip title="Remove image">
+                      <IconButton
+                        size="small"
+                        onClick={handleClearImage}
+                        sx={{
+                          position: "absolute",
+                          top: -12,
+                          right: -12,
+                          bgcolor: "white",
+                          border: "1px solid #ddd",
+                          "&:hover": {
+                            bgcolor: "#f5f5f5",
+                          },
+                        }}
+                      >
+                        <CloseIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                )}
+                <Box
+                  component="form"
+                  sx={{
+                    display: "flex",
+                    gap: 1,
+                  }}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }}
                 >
-                  <SendIcon />
-                </IconButton>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    ref={fileInputRef}
+                    onChange={handleFileSelect}
+                    style={{ display: "none" }}
+                  />
+                  <Tooltip title="Attach image">
+                    <IconButton
+                      color="primary"
+                      onClick={() => fileInputRef.current?.click()}
+                      size="small"
+                    >
+                      <ImageIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <TextField
+                    fullWidth
+                    placeholder="Type a message"
+                    variant="outlined"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    size="small"
+                  />
+                  <IconButton
+                    color="primary"
+                    onClick={handleSendMessage}
+                    disabled={!message.trim() && !selectedFile}
+                  >
+                    <SendIcon />
+                  </IconButton>
+                </Box>
               </Box>
             </>
           ) : (

@@ -28,23 +28,48 @@ export const createConversation = async (data) => {
 
 
 export const createMessage = async (data) => {
+  const formData = new FormData();
+  formData.append("conversationId", data.conversationId);
+  if (data.message) {
+    formData.append("message", data.message);
+  }
+
   return await httpClient.post(
     API.CREATE_MESSAGE,
-    {
-      conversationId: data.conversationId,
-      message: data.message,
-    },
+    formData,
     {
       headers: {
         Authorization: `Bearer ${getToken()}`,
-        "Content-Type": "application/json",
+        "Content-Type": "multipart/form-data",
       },
     }
   );
 };
 
-export const getMessages = async (conversationId) => {
-  return await httpClient.get(`${API.GET_CONVERSATION_MESSAGES}?conversationId=${conversationId}`, {
+export const createMessageWithImage = async (data) => {
+  const formData = new FormData();
+  formData.append("conversationId", data.conversationId);
+  if (data.message) {
+    formData.append("message", data.message);
+  }
+  if (data.file) {
+    formData.append("file", data.file);
+  }
+
+  return await httpClient.post(
+    API.CREATE_MESSAGE,
+    formData,
+    {
+      headers: {
+        Authorization: `Bearer ${getToken()}`,
+        "Content-Type": "multipart/form-data",
+      },
+    }
+  );
+};
+
+export const getMessages = async (conversationId, page = 1, size = 20) => {
+  return await httpClient.get(`${API.GET_CONVERSATION_MESSAGES}?conversationId=${conversationId}&page=${page}&size=${size}`, {
     headers: {
       Authorization: `Bearer ${getToken()}`,
     },
