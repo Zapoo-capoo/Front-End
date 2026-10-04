@@ -68,12 +68,43 @@ export const createMessageWithImage = async (data) => {
   );
 };
 
-export const getMessages = async (conversationId, page = 1, size = 20) => {
-  return await httpClient.get(`${API.GET_CONVERSATION_MESSAGES}?conversationId=${conversationId}&page=${page}&size=${size}`, {
+export const getMessages = async (conversationId, cursor = null, size = 20) => {
+  return await httpClient.get(API.GET_CONVERSATION_MESSAGES, {
+    params: { conversationId, size, ...(cursor ? { cursor } : {}) },
     headers: {
       Authorization: `Bearer ${getToken()}`,
     },
   });
+};
+
+export const createGroupConversation = async (data) => {
+  return await httpClient.post(
+    API.CREATE_GROUP_CONVERSATION,
+    { name: data.name, participantIds: data.participantIds },
+    { headers: { Authorization: `Bearer ${getToken()}` } }
+  );
+};
+
+export const addGroupParticipants = async (conversationId, participantIds) => {
+  return await httpClient.post(
+    `/chat/conversations/${conversationId}/participants/add`,
+    { participantIds },
+    { headers: { Authorization: `Bearer ${getToken()}` } }
+  );
+};
+
+export const hasConversationSeen = async (conversationId) => {
+  return await httpClient.get(`/chat/conversations/${conversationId}/seen`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+};
+
+export const markConversationSeen = async (conversationId) => {
+  return await httpClient.post(
+    `/chat/conversations/${conversationId}/seen`,
+    null,
+    { headers: { Authorization: `Bearer ${getToken()}` } }
+  );
 };
 
 export const deleteMessage = async (messageId) => {

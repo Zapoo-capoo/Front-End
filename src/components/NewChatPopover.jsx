@@ -14,17 +14,25 @@ import {
   InputAdornment,
   IconButton,
   Alert,
+  Button,
+  Chip,
+  Tab,
+  Tabs,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import ClearIcon from "@mui/icons-material/Clear";
 import { search as searchUsers } from "../services/userService";
 
-const NewChatPopover = ({ anchorEl, open, onClose, onSelectUser }) => {
+const NewChatPopover = ({ anchorEl, open, onClose, onSelectUser, onCreateGroup }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState(null);
+  const [mode, setMode] = useState("direct");
+  const [groupName, setGroupName] = useState("");
+  const [members, setMembers] = useState([]);
+  const [creating, setCreating] = useState(false);
   // Memoized search function to avoid recreating on every render
   const handleSearch = useCallback(async (query) => {
     if (!query?.trim()) {
@@ -77,7 +85,35 @@ const NewChatPopover = ({ anchorEl, open, onClose, onSelectUser }) => {
     setError(null);
   };
 
+  const resetGroup = () => {
+    setGroupName("");
+    setMembers([]);
+    setMode("direct");
+  };
+
+  const handleCreateGroup = async () => {
+    if (!groupName.trim() || members.length === 0) return;
+    setCreating(true);
+    try {
+      await onCreateGroup(groupName.trim(), members);
+      resetGroup();
+      setSearchQuery("");
+      onClose();
+    } catch (err) {
+      console.error("Error creating group:", err);
+      setError("Failed to create group. Please try again.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const handleUserSelect = (user) => {
+    if (mode === "group") {
+      setMembers((prev) =>
+        prev.some((m) => m.userId === user.userId) ? prev : [...prev, user]
+      );
+      return;
+    }
     onSelectUser(user);
     setSearchQuery("");
     setSearchResults([]);
@@ -110,7 +146,51 @@ const NewChatPopover = ({ anchorEl, open, onClose, onSelectUser }) => {
     >
       <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: "bold" }}>
         Start a new conversation
-      </Typography>{" "}
+      </Typography>
+      <Tabs
+        value={mode}
+        onChange={(_, v) => setMode(v)}
+        variant="fullWidth"
+        sx={{ mb: 1 }}
+      >
+        <Tab value="direct" label="Direct" />
+        <Tab value="group" label="Group" />
+      </Tabs>
+      {mode === "group" && (
+        <Box sx={{ mb: 2 }}>
+          <TextField
+            fullWidth
+            size="small"
+            placeholder="Group name"
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+            inputProps={{ maxLength: 100 }}
+            sx={{ mb: 1 }}
+          />
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mb: 1 }}>
+            {members.map((m) => (
+              <Chip
+                key={m.userId}
+                size="small"
+                label={m.username}
+                onDelete={() =>
+                  setMembers((prev) =>
+                    prev.filter((x) => x.userId !== m.userId)
+                  )
+                }
+              />
+            ))}
+          </Box>
+          <Button
+            fullWidth
+            variant="contained"
+            disabled={creating || !groupName.trim() || members.length === 0}
+            onClick={handleCreateGroup}
+          >
+            Create group ({members.length})
+          </Button>
+        </Box>
+      )}
       <TextField
         fullWidth
         placeholder="Start typing to search users..."
@@ -207,6 +287,7 @@ NewChatPopover.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   onSelectUser: PropTypes.func.isRequired,
+  onCreateGroup: PropTypes.func.isRequired,
 };
 
 export default NewChatPopover;

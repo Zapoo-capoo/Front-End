@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import {
   Box,
   Card,
@@ -30,17 +30,42 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import ImageIcon from "@mui/icons-material/Image";
 import CloseIcon from "@mui/icons-material/Close";
 import Scene from "./Scene";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import NewChatPopover from "../components/NewChatPopover";
 import {
   getMyConversations,
   createConversation,
+  createGroupConversation,
   getMessages,
+  markConversationSeen,
+  hasConversationSeen,
   createMessage,
   createMessageWithImage,
   deleteMessage,
 } from "../services/chatService";
 import { io } from "socket.io-client";
 import { getToken, getCurrentUserId } from "../services/localStorageService";
+import { getMyInfo } from "../services/userService";
+
+const GROUP_AVATAR = `${process.env.PUBLIC_URL}/group-avatar.svg`;
+
+// Every group shares the same icon; direct chats use the other user's avatar
+const getConversationAvatar = (conversation) =>
+  conversation?.type === "GROUP"
+    ? GROUP_AVATAR
+    : conversation?.conversationAvatar || "";
+
+// hasSeen === false on my own participant entry means there is a message I have not opened yet
+const isConversationUnseen = (conversation) =>
+  conversation?.participants?.find((p) => p.userId === getCurrentUserId())
+    ?.hasSeen === false;
+
+const withMySeenState = (conversation, hasSeen) => ({
+  ...conversation,
+  participants: (conversation.participants || []).map((p) =>
+    p.userId === getCurrentUserId() ? { ...p, hasSeen } : p
+  ),
+});
 
 const resolveLatestIncomingAvatar = (messages, fallbackAvatar = "", currentUserId = null) => {
   const latestIncomingMessageWithAvatar = [...messages]
@@ -68,16 +93,18 @@ export default function Chat() {
   const [selectedMessageId, setSelectedMessageId] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
-  const [pageMap, setPageMap] = useState({});
-  const [totalPagesMap, setTotalPagesMap] = useState({});
+  const [myAvatar, setMyAvatar] = useState("");
+  // On small screens only one pane (list or chat) is visible at a time
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [cursorMap, setCursorMap] = useState({});
   const [hasMoreMap, setHasMoreMap] = useState({});
   const [loadingOldMessagesMap, setLoadingOldMessagesMap] = useState({});
   const fileInputRef = useRef(null);
   const messageContainerRef = useRef(null);
   const firstMessageRef = useRef(null);
   const observerRef = useRef(null);
-  const scrollHeightBeforeRef = useRef(0);
-  const prevLoadingStateRef = useRef({});
+  const prependAnchorRef = useRef(null);
+  const prevMessageEdgesRef = useRef({ first: null, last: null });
   const socketRef = useRef(null); // Function to scroll to the bottom of the message container
   const scrollToBottom = useCallback(() => {
     if (messageContainerRef.current) {
@@ -108,6 +135,21 @@ export default function Chat() {
     setNewChatAnchorEl(null);
   };
 
+  const handleCreateGroup = async (name, users) => {
+    const response = await createGroupConversation({
+      name,
+      participantIds: users.map((u) => u.userId),
+    });
+    const newGroup = response?.data?.result;
+    if (!newGroup) return;
+    setConversations((prev) => [
+      newGroup,
+      ...prev.filter((c) => c.id !== newGroup.id),
+    ]);
+    setSelectedConversation(newGroup);
+    setMobileChatOpen(true);
+  };
+
   const handleSelectNewChatUser = async (user) => {
     const response = await createConversation({
       type: "DIRECT",
@@ -124,6 +166,7 @@ export default function Chat() {
     if (existingConversation) {
       // If conversation exists, just select it
       setSelectedConversation(existingConversation);
+      setMobileChatOpen(true);
     } else {
       const normalizedConversation = {
         ...newConversation,
@@ -139,6 +182,7 @@ export default function Chat() {
 
       // Select this new conversation
       setSelectedConversation(normalizedConversation);
+      setMobileChatOpen(true);
     }
   };
 
@@ -162,12 +206,12 @@ export default function Chat() {
     fetchConversations();
   }, []);
 
-  // Initialize with first conversation selected when available
+  // Load my own profile to show my avatar next to my messages
   useEffect(() => {
-    if (conversations.length > 0 && !selectedConversation) {
-      setSelectedConversation(conversations[0]);
-    }
-  }, [conversations, selectedConversation]);
+    getMyInfo()
+      .then((res) => setMyAvatar(res?.data?.result?.avatar || ""))
+      .catch((err) => console.error("Error loading my profile:", err));
+  }, []);
 
   // Load messages from the conversation history when a conversation is selected
   useEffect(() => {
@@ -175,7 +219,7 @@ export default function Chat() {
       try {
         // Check if we already have messages for this conversation
         if (pageNum === 1 && !messagesMap[conversationId]) {
-          const response = await getMessages(conversationId, pageNum, 20);
+          const response = await getMessages(conversationId, null, 20);
           if (response?.data?.result) {
             const messageData = response.data.result;
             
@@ -184,15 +228,15 @@ export default function Chat() {
               (a, b) => new Date(a.createdDate) - new Date(b.createdDate)
             );
 
-            // Initialize pagination state
-            setTotalPagesMap((prev) => ({
+            // Initialize cursor pagination state
+            setHasMoreMap((prev) => ({
               ...prev,
-              [conversationId]: messageData.totalPages,
+              [conversationId]: !!messageData.hasMore,
             }));
 
-            setPageMap((prev) => ({
+            setCursorMap((prev) => ({
               ...prev,
-              [conversationId]: 1,
+              [conversationId]: messageData.nextCursor || null,
             }));
 
             // Update messages map with the fetched messages
@@ -203,7 +247,6 @@ export default function Chat() {
           }
         }
 
-        // Mark conversation as read when selected
         setConversations((prevConversations) =>
           prevConversations.map((conv) =>
             conv.id === conversationId ? { ...conv, unread: 0 } : conv
@@ -227,28 +270,24 @@ export default function Chat() {
 
 
 
-  // Automatically scroll to the bottom when messages change or after sending a message
-  // But NOT when loading older messages and NOT immediately after finishing load
-  useEffect(() => {
-    const conversationId = selectedConversation?.id;
-    if (!conversationId) {
-      return;
-    }
+  // Keep the viewport where it is when older messages are prepended,
+  // otherwise scroll to the bottom only when a newer message arrives
+  useLayoutEffect(() => {
+    const container = messageContainerRef.current;
+    const first = currentMessages[0]?.id;
+    const last = currentMessages[currentMessages.length - 1]?.id;
+    const prev = prevMessageEdgesRef.current;
 
-    const isLoading = loadingOldMessagesMap[conversationId];
-    const wasLoading = prevLoadingStateRef.current[conversationId];
-
-    // Update previous state
-    prevLoadingStateRef.current[conversationId] = isLoading;
-
-    // Don't scroll to bottom if:
-    // 1. Currently loading old messages
-    // 2. Just finished loading old messages (transition from loading to not loading)
-    const justFinishedLoading = wasLoading && !isLoading;
-    if (!isLoading && !justFinishedLoading) {
+    if (container && prependAnchorRef.current && first !== prev.first) {
+      const { height, top } = prependAnchorRef.current;
+      container.scrollTop = top + (container.scrollHeight - height);
+      prependAnchorRef.current = null;
+    } else if (last !== prev.last) {
       scrollToBottom();
     }
-  }, [currentMessages, scrollToBottom, loadingOldMessagesMap, selectedConversation]);
+
+    prevMessageEdgesRef.current = { first, last };
+  }, [currentMessages, scrollToBottom]);
 
   // Also scroll when the conversation changes
   useEffect(() => {
@@ -334,12 +373,11 @@ export default function Chat() {
       return;
     }
 
-    const currentPage = pageMap[conversationId] || 1;
-    const totalPages = totalPagesMap[conversationId] || 1;
+    const hasMore = hasMoreMap[conversationId] || false;
     const isLoading = loadingOldMessagesMap[conversationId] || false;
 
     // Don't set up observer if already loading, no more pages, or no conversation selected
-    if (isLoading || currentPage >= totalPages) {
+    if (isLoading || !hasMore) {
       if (observerRef.current) {
         observerRef.current.disconnect();
       }
@@ -355,17 +393,18 @@ export default function Chat() {
         if (entries[0].isIntersecting) {
           // Check again to avoid double-loading
           const convId = selectedConversation.id;
-          const currPage = pageMap[convId] || 1;
-          const totalPgs = totalPagesMap[convId] || 1;
+          const convHasMore = hasMoreMap[convId] || false;
+          const convCursor = cursorMap[convId] || null;
           const isAlreadyLoading = loadingOldMessagesMap[convId] || false;
 
-          if (!isAlreadyLoading && currPage < totalPgs) {
-            const nextPage = currPage + 1;
-
+          if (!isAlreadyLoading && convHasMore && convCursor) {
             // Capture scroll height BEFORE loading
             const scrollContainer = messageContainerRef.current;
             if (scrollContainer) {
-              scrollHeightBeforeRef.current = scrollContainer.scrollHeight;
+              prependAnchorRef.current = {
+                height: scrollContainer.scrollHeight,
+                top: scrollContainer.scrollTop,
+              };
             }
 
             // Mark as loading BEFORE making the request
@@ -374,7 +413,7 @@ export default function Chat() {
               [convId]: true,
             }));
 
-            getMessages(convId, nextPage, 20)
+            getMessages(convId, convCursor, 20)
               .then((response) => {
                 if (response?.data?.result?.data?.length > 0) {
                   const newMessages = response.data.result.data.sort(
@@ -390,12 +429,17 @@ export default function Chat() {
                     ],
                   }));
 
-                  // Update page number
-                  setPageMap((prev) => ({
-                    ...prev,
-                    [convId]: nextPage,
-                  }));
                 }
+
+                const result = response?.data?.result;
+                setHasMoreMap((prev) => ({
+                  ...prev,
+                  [convId]: !!result?.hasMore,
+                }));
+                setCursorMap((prev) => ({
+                  ...prev,
+                  [convId]: result?.nextCursor || null,
+                }));
               })
               .catch((error) => {
                 console.error("Error loading older messages:", error);
@@ -428,42 +472,26 @@ export default function Chat() {
         observerInstance.disconnect();
       }
     };
-  }, [selectedConversation?.id, pageMap, totalPagesMap, loadingOldMessagesMap, selectedConversation]);
-
-  // Effect to handle scroll position after loading old messages
-  useEffect(() => {
-    const conversationId = selectedConversation?.id;
-    if (!conversationId || !currentMessages) {
-      return;
-    }
-
-    const isLoading = loadingOldMessagesMap[conversationId];
-    const wasLoadingBefore = prevLoadingStateRef.current[conversationId];
-
-    // If we just finished loading old messages AND we have scroll height to restore, do it
-    const justFinishedLoading = wasLoadingBefore && !isLoading;
-    if (justFinishedLoading && scrollHeightBeforeRef.current > 0) {
-      const scrollContainer = messageContainerRef.current;
-      if (scrollContainer) {
-        const heightDifference =
-          scrollContainer.scrollHeight - scrollHeightBeforeRef.current;
-        
-        // Preserve scroll position by scrolling down by the height of new messages
-        requestAnimationFrame(() => {
-          if (scrollContainer && heightDifference > 0) {
-            scrollContainer.scrollTop += heightDifference;
-          }
-          scrollHeightBeforeRef.current = 0;
-        });
-      }
-    }
-
-    // Update the previous state for next comparison
-    prevLoadingStateRef.current[conversationId] = isLoading;
-  }, [currentMessages, loadingOldMessagesMap, selectedConversation?.id]);
+  }, [selectedConversation?.id, cursorMap, hasMoreMap, loadingOldMessagesMap, selectedConversation]);
 
   const handleConversationSelect = (conversation) => {
     setSelectedConversation(conversation);
+    setMobileChatOpen(true);
+
+    // Ask the backend whether it is already seen; only mark it when it is not
+    hasConversationSeen(conversation.id)
+      .then((res) => {
+        if (res?.data?.result === false) {
+          return markConversationSeen(conversation.id).then(() =>
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === conversation.id ? withMySeenState(c, true) : c
+              )
+            )
+          );
+        }
+      })
+      .catch((err) => console.error("Error checking seen state:", err));
   };
 
   const handleFileSelect = (event) => {
@@ -604,9 +632,20 @@ export default function Chat() {
               ? message.sender.avatar
               : conv.conversationAvatar;
 
+          const fromOther = !isMessageFromCurrentUser(message);
+          const isOpen = selectedConversation?.id === message.conversationId;
+          let seenState = conv;
+          if (fromOther) {
+            if (isOpen) {
+              // The user is looking at this conversation, so it counts as seen
+              markConversationSeen(conv.id).catch(() => {});
+            } else {
+              seenState = withMySeenState(conv, false);
+            }
+          }
+
           const updatedConversation = {
-            ...conv,
-            lastMessage: message.message,
+            ...seenState,
             lastTimestamp: new Date(message.createdDate).toLocaleString(),
             unread:
               selectedConversation?.id === message.conversationId
@@ -634,21 +673,25 @@ export default function Chat() {
       <Card
         sx={{
           width: "100%",
-          height: "calc(100vh - 64px)" /* 100vh minus header (64px) */,
+          height: {
+            xs: "calc(100dvh - 56px)",
+            sm: "calc(100dvh - 64px)",
+          } /* viewport minus app bar */,
           maxHeight: "100%",
           display: "flex",
           flexDirection: "row",
-          mb: "-64px" /* Counteract the parent padding */,
+          mb: { xs: "-56px", sm: "-64px" } /* Counteract the toolbar spacer */,
           overflow: "hidden",
         }}
       >
         {/* Conversations List */}
         <Box
           sx={{
-            width: 300,
+            width: { xs: "100%", md: 300 },
+            flexShrink: 0,
             borderRight: 1,
             borderColor: "divider",
-            display: "flex",
+            display: { xs: mobileChatOpen ? "none" : "flex", md: "flex" },
             flexDirection: "column",
           }}
         >
@@ -683,6 +726,7 @@ export default function Chat() {
               open={Boolean(newChatAnchorEl)}
               onClose={handleCloseNewChat}
               onSelectUser={handleSelectNewChatUser}
+              onCreateGroup={handleCreateGroup}
             />
           </Box>{" "}
           <Box
@@ -756,7 +800,7 @@ export default function Chat() {
                             overlap="circular"
                           >
                             <Avatar
-                              src={conversation.conversationAvatar || ""}
+                              src={getConversationAvatar(conversation)}
                             />
                           </Badge>
                         </ListItemAvatar>
@@ -773,7 +817,12 @@ export default function Chat() {
                                 variant="body2"
                                 color="text.primary"
                                 noWrap
-                                sx={{ display: "inline" }}
+                                sx={{
+                                  display: "inline",
+                                  fontWeight: isConversationUnseen(conversation)
+                                    ? 700
+                                    : 400,
+                                }}
                               >
                                 {conversation.conversationName}
                               </Typography>
@@ -793,21 +842,9 @@ export default function Chat() {
                               </Typography>
                             </Stack>
                           }
-                          secondary={
-                            <Typography
-                              sx={{ display: "inline" }}
-                              component="span"
-                              variant="body2"
-                              color="text.primary"
-                              noWrap
-                            >
-                              {conversation.lastMessage ||
-                                "Start a conversation"}
-                            </Typography>
-                          }
                           primaryTypographyProps={{
                             fontWeight:
-                              conversation.unread > 0 ? "bold" : "normal",
+                              isConversationUnseen(conversation) ? "bold" : "normal",
                           }}
                           sx={{
                             overflow: "hidden",
@@ -830,7 +867,8 @@ export default function Chat() {
         <Box
           sx={{
             flexGrow: 1,
-            display: "flex",
+            minWidth: 0,
+            display: { xs: mobileChatOpen ? "flex" : "none", md: "flex" },
             flexDirection: "column",
           }}
         >
@@ -845,11 +883,18 @@ export default function Chat() {
                   alignItems: "center",
                 }}
               >
+                <IconButton
+                  onClick={() => setMobileChatOpen(false)}
+                  sx={{ display: { xs: "inline-flex", md: "none" }, mr: 1 }}
+                  aria-label="back to conversations"
+                >
+                  <ArrowBackIcon />
+                </IconButton>
                 <Avatar
-                  src={selectedConversation.conversationAvatar}
+                  src={getConversationAvatar(selectedConversation)}
                   sx={{ mr: 2 }}
                 />
-                <Typography variant="h6">
+                <Typography variant="h6" noWrap>
                   {selectedConversation.conversationName}
                 </Typography>
               </Box>{" "}
@@ -878,11 +923,13 @@ export default function Chat() {
                   {loadingOldMessagesMap[selectedConversation?.id] && (
                     <Box
                       sx={{
+                        position: "absolute",
+                        top: 8,
+                        left: 0,
+                        right: 0,
                         display: "flex",
                         justifyContent: "center",
-                        alignItems: "center",
-                        p: 2,
-                        minHeight: 60,
+                        pointerEvents: "none",
                       }}
                     >
                       <CircularProgress size={32} />
@@ -937,8 +984,10 @@ export default function Chat() {
                             }
                           }}
                           sx={{
-                            p: 2,
-                            maxWidth: "70%",
+                            p: { xs: 1.25, sm: 2 },
+                            maxWidth: { xs: "80%", md: "70%" },
+                            minWidth: 0,
+                            wordBreak: "break-word",
                             backgroundColor,
                             color: messageTextColor,
                             borderRadius: 2,
@@ -999,6 +1048,7 @@ export default function Chat() {
                               height: 32,
                               bgcolor: "#1976d2",
                             }}
+                            src={myAvatar || msg?.sender?.avatar || ""}
                           >
                             You
                           </Avatar>

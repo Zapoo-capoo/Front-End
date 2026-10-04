@@ -42,7 +42,7 @@ function Scene({ children }) {
       <AppBar
         position="fixed"
         sx={{
-          ml: { sm: `${drawerWidth}px` },
+          ml: { md: `${drawerWidth}px` },
           zIndex: theme.zIndex.drawer + 1,
         }}
       >
@@ -52,7 +52,7 @@ function Scene({ children }) {
             aria-label="open drawer"
             edge="start"
             onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { sm: "none" } }}
+            sx={{ mr: 2, display: { md: "none" } }}
           >
             <MenuIcon />
           </IconButton>
@@ -67,7 +67,7 @@ function Scene({ children }) {
       >
         <Box
           component="nav"
-          sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
+          sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
           aria-label="mailbox folders"
         >
           <Drawer
@@ -79,7 +79,7 @@ function Scene({ children }) {
               keepMounted: true, // Better open performance on mobile.
             }}
             sx={{
-              display: { xs: "block", sm: "none" },
+              display: { xs: "block", md: "none" },
               "& .MuiDrawer-paper": {
                 boxSizing: "border-box",
                 width: drawerWidth,
@@ -91,7 +91,7 @@ function Scene({ children }) {
           <Drawer
             variant="permanent"
             sx={{
-              display: { xs: "none", sm: "block" },
+              display: { xs: "none", md: "block" },
               "& .MuiDrawer-paper": {
                 boxSizing: "border-box",
                 width: drawerWidth,
@@ -106,7 +106,7 @@ function Scene({ children }) {
           component="main"
           sx={{
             flexGrow: 1,
-            width: { sm: `calc(100% - ${drawerWidth}px)` },
+            width: { md: `calc(100% - ${drawerWidth}px)` },
           }}
         >
           <Toolbar />{" "}

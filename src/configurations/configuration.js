@@ -4,7 +4,7 @@ export const CONFIG = {
 
 export const OAUTH_CONFIG = {
   CLIENT_ID:
-    "514738420681-5via058evbtsra053qirvn1q25gq4gqo.apps.googleusercontent.com",
+    "967957208661-sho8ed65f1vqpq71bla7b9f3dv7c5su4.apps.googleusercontent.com",
   AUTH_URI: "https://accounts.google.com/o/oauth2/auth",
   REDIRECT_PATH: "/authenticate",
 };
@@ -33,6 +33,7 @@ export const API = {
   UNFRIEND: "/profile/friends/unfriend",
   MY_CONVERSATIONS: "/chat/conversations/my-conversations",
   CREATE_CONVERSATION: "/chat/conversations/create",
+  CREATE_GROUP_CONVERSATION: "/chat/conversations/group/create",
   CREATE_MESSAGE: "/chat/messages/create",
   GET_CONVERSATION_MESSAGES: "/chat/messages",
   DELETE_MESSAGE: "/chat/messages",
